@@ -16,6 +16,7 @@ const sourcemaps = require("gulp-sourcemaps");
 const postcss = require("gulp-postcss");
 const autoprefixer = require("autoprefixer");
 const tailwindcss = require("tailwindcss");
+const { isWsl, getLocalIPv4, isPortAvailable, announceDevUrls } = require("./scripts/wsl-dev");
 
 const paths = {
   config: {
@@ -98,12 +99,50 @@ const paths = {
 };
 
 gulp.task("browsersync", function (callback) {
-  browsersync.init({
-    server: {
-      baseDir: [paths.dist.base.dir, paths.src.base.dir, paths.base.base.dir],
-    },
+  const devPort = 3000;
+  const devUiPort = 3001;
+
+  isPortAvailable(devPort).then(function (available) {
+    if (!available) {
+      console.error(
+        `\n  Port ${devPort} is already in use. Stop the other dev server first (Ctrl+C), then run npm run dev again.\n`
+      );
+      callback(new Error(`Port ${devPort} is already in use`));
+      return;
+    }
+
+    const wslIp = getLocalIPv4();
+    const bsConfig = {
+      server: {
+        baseDir: [paths.dist.base.dir, paths.src.base.dir, paths.base.base.dir],
+      },
+      host: "0.0.0.0",
+      port: devPort,
+      open: false,
+      notify: false,
+      online: true,
+      ui: {
+        host: "0.0.0.0",
+        port: devUiPort,
+      },
+    };
+
+    if (isWsl() && wslIp) {
+      bsConfig.socket = {
+        domain: `${wslIp}:${devPort}`,
+      };
+    }
+
+    browsersync.init(bsConfig, function (err, bs) {
+      if (err) {
+        callback(err);
+        return;
+      }
+
+      announceDevUrls(bs.options.get("port"));
+      callback();
+    });
   });
-  callback();
 });
 
 gulp.task("browsersyncReload", function (callback) {
